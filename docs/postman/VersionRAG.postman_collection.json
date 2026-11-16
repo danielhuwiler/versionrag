@@ -1,0 +1,527 @@
+{
+  "info": {
+    "name": "VersionRAG API",
+    "description": "Version-aware RAG system for structured document retrieval",
+    "version": "0.1.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "System Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Return the health status of all system components. Queries Neo4j and Qdrant live on every call. Returns HTTP 503 if either service is unreachable."
+          },
+          "response": [
+            {
+              "name": "200 - All services healthy",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"status\": \"ok\",\n  \"neo4j\": \"ok\",\n  \"qdrant\": \"ok\",\n  \"embedding_model\": \"BAAI/bge-m3\",\n  \"embedding_dimension\": 1024,\n  \"qdrant_collection\": \"versionrag\",\n  \"neo4j_constraints\": [\"Category.name\", \"Document.name\", \"Version.id\"]\n}"
+            },
+            {
+              "name": "503 - Service unavailable",
+              "status": "Service Unavailable",
+              "code": 503,
+              "body": "{\n  \"status\": \"degraded\",\n  \"neo4j\": \"unavailable\",\n  \"qdrant\": \"ok\",\n  \"embedding_model\": \"BAAI/bge-m3\",\n  \"embedding_dimension\": 1024,\n  \"qdrant_collection\": \"versionrag\",\n  \"neo4j_constraints\": []\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Debug",
+      "item": [
+        {
+          "name": "Populate Graph with Test Data",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/debug/test-graph",
+              "host": ["{{base_url}}"],
+              "path": ["debug", "test-graph"]
+            },
+            "description": "Insert a representative set of test nodes and relationships. Creates categories, documents, versions, NEXT edges, and Change nodes that mirror the VersionQA dataset."
+          },
+          "response": [
+            {
+              "name": "200 - Test data inserted",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"nodes_created\": 42,\n  \"relationships_created\": 38,\n  \"categories\": 3,\n  \"documents\": 5,\n  \"versions\": 18,\n  \"changes\": 16\n}"
+            }
+          ]
+        },
+        {
+          "name": "Graph Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/debug/graph-stats",
+              "host": ["{{base_url}}"],
+              "path": ["debug", "graph-stats"]
+            },
+            "description": "Return current node and relationship counts from the graph."
+          },
+          "response": [
+            {
+              "name": "200 - Graph stats",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"nodes\": {\n    \"Category\": 3,\n    \"Document\": 5,\n    \"Version\": 18,\n    \"Change\": 16\n  },\n  \"relationships\": {\n    \"HAS_DOCUMENT\": 5,\n    \"HAS_VERSION\": 18,\n    \"NEXT\": 13,\n    \"CHANGED_TO\": 16\n  },\n  \"total_nodes\": 42,\n  \"total_relationships\": 52\n}"
+            }
+          ]
+        },
+        {
+          "name": "Search Changes (Full-text)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/debug/search-changes?q=deprecated",
+              "host": ["{{base_url}}"],
+              "path": ["debug", "search-changes"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "deprecated",
+                  "description": "Lucene-compatible search term (e.g. 'deprecated', 'ERR_*')"
+                }
+              ]
+            },
+            "description": "Search Change node names and descriptions using the fulltext index. Returns up to 10 matches ordered by relevance score."
+          },
+          "response": [
+            {
+              "name": "200 - Matching changes",
+              "status": "OK",
+              "code": 200,
+              "body": "[\n  {\n    \"name\": \"assert.ok deprecated message\",\n    \"description\": \"The non-string message parameter for assert.ok() is now deprecated\",\n    \"change_type\": \"explicit\",\n    \"version_from\": \"v14.0.0\",\n    \"version_to\": \"v15.0.0\",\n    \"score\": 0.98\n  },\n  {\n    \"name\": \"callback deprecated\",\n    \"description\": \"The callback-based API is deprecated in favour of the promise-based one\",\n    \"change_type\": \"explicit\",\n    \"version_from\": \"v16.0.0\",\n    \"version_to\": \"v17.0.0\",\n    \"score\": 0.87\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "List Changes for Document",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/debug/changes?document=assert",
+              "host": ["{{base_url}}"],
+              "path": ["debug", "changes"],
+              "query": [
+                {
+                  "key": "document",
+                  "value": "assert",
+                  "description": "Document name in the graph (e.g. 'assert', 'errors', 'bootstrap')"
+                }
+              ]
+            },
+            "description": "Return all Change nodes connected to a document's versions."
+          },
+          "response": [
+            {
+              "name": "200 - List of changes",
+              "status": "OK",
+              "code": 200,
+              "body": "[\n  {\n    \"from_version\": \"v14.0.0\",\n    \"to_version\": \"v15.0.0\",\n    \"name\": \"assert.ok strict mode\",\n    \"description\": \"assert.ok() now enforces strict equality in strict mode\",\n    \"change_type\": \"explicit\",\n    \"source\": \"changelog\"\n  },\n  {\n    \"from_version\": \"v15.0.0\",\n    \"to_version\": \"v16.0.0\",\n    \"name\": \"assert.deepEqual updated\",\n    \"description\": \"assert.deepEqual behaviour aligned with assert.deepStrictEqual\",\n    \"change_type\": \"implicit\",\n    \"source\": \"diff\"\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "List All Documents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/debug/documents",
+              "host": ["{{base_url}}"],
+              "path": ["debug", "documents"]
+            },
+            "description": "Return all Document nodes with their version counts and version numbers."
+          },
+          "response": [
+            {
+              "name": "200 - Documents with version info",
+              "status": "OK",
+              "code": 200,
+              "body": "[\n  {\n    \"document\": \"assert\",\n    \"version_count\": 6,\n    \"versions\": [\"v12.0.0\", \"v13.0.0\", \"v14.0.0\", \"v15.0.0\", \"v16.0.0\", \"v18.0.0\"]\n  },\n  {\n    \"document\": \"errors\",\n    \"version_count\": 4,\n    \"versions\": [\"v10.0.0\", \"v12.0.0\", \"v14.0.0\", \"v16.0.0\"]\n  },\n  {\n    \"document\": \"bootstrap\",\n    \"version_count\": 3,\n    \"versions\": [\"v14.0.0\", \"v16.0.0\", \"v18.0.0\"]\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "List Qdrant Documents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/debug/qdrant-documents",
+              "host": ["{{base_url}}"],
+              "path": ["debug", "qdrant-documents"]
+            },
+            "description": "Scroll through Qdrant points and collect all unique 'document' payload values."
+          },
+          "response": [
+            {
+              "name": "200 - Unique documents in Qdrant",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"unique_documents\": [\"assert\", \"errors\", \"bootstrap\", \"fs\", \"http\"],\n  \"count\": 5\n}"
+            }
+          ]
+        },
+        {
+          "name": "Sample Chunks from Qdrant",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/debug/sample-chunks?limit=5",
+              "host": ["{{base_url}}"],
+              "path": ["debug", "sample-chunks"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "5",
+                  "description": "Number of sample points to return (default: 5)"
+                }
+              ]
+            },
+            "description": "Load a few random points from Qdrant and return their full payloads."
+          },
+          "response": [
+            {
+              "name": "200 - Sample chunks",
+              "status": "OK",
+              "code": 200,
+              "body": "[\n  {\n    \"id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\n    \"payload\": {\n      \"content\": \"The assert module provides a set of assertion functions for verifying invariants.\",\n      \"document\": \"assert\",\n      \"version\": \"v18.0.0\",\n      \"category\": \"modules\",\n      \"chunk_index\": 0\n    }\n  },\n  {\n    \"id\": \"b2c3d4e5-f6a7-8901-bcde-f12345678901\",\n    \"payload\": {\n      \"content\": \"ERR_ASSERTION is thrown when assert() fails in strict mode.\",\n      \"document\": \"errors\",\n      \"version\": \"v16.0.0\",\n      \"category\": \"modules\",\n      \"chunk_index\": 3\n    }\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "Reset Graph",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/debug/reset-graph",
+              "host": ["{{base_url}}"],
+              "path": ["debug", "reset-graph"]
+            },
+            "description": "Remove all nodes and relationships from the graph using DETACH DELETE. ⚠️ Destructive — cannot be undone."
+          },
+          "response": [
+            {
+              "name": "200 - Graph reset",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"status\": \"reset\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Indexing",
+      "item": [
+        {
+          "name": "Run Full Indexing Pipeline",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"data_dir\": \"data/raw\",\n  \"reset\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/indexing/run",
+              "host": ["{{base_url}}"],
+              "path": ["indexing", "run"]
+            },
+            "description": "Execute the full indexing pipeline on a directory. Phase A: extract metadata, create graph nodes, index in Qdrant. Phase B: Link versions with NEXT edges, extract changes between consecutive pairs."
+          },
+          "response": [
+            {
+              "name": "200 - Pipeline summary",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"status\": \"ok\",\n  \"files_processed\": 12,\n  \"files_failed\": 0,\n  \"duration_seconds\": 47.3,\n  \"graph_stats\": {\n    \"total_nodes\": 84,\n    \"total_relationships\": 106\n  },\n  \"qdrant_points\": 348,\n  \"per_file\": [\n    {\n      \"file\": \"data/raw/assert/v18.0.0.md\",\n      \"status\": \"ok\",\n      \"chunks\": 29\n    },\n    {\n      \"file\": \"data/raw/errors/v16.0.0.md\",\n      \"status\": \"ok\",\n      \"chunks\": 41\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Add Documents to Index",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"file_paths\": [\n    \"data/raw/assert/v20.0.0.md\",\n    \"data/raw/fs/v20.0.0.md\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/indexing/add",
+              "host": ["{{base_url}}"],
+              "path": ["indexing", "add"]
+            },
+            "description": "Add one or more files to the existing graph and index without resetting. NEXT edges and changes are updated after all files are ingested."
+          },
+          "response": [
+            {
+              "name": "200 - Add result",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"status\": \"ok\",\n  \"files_processed\": 2,\n  \"files_failed\": 0,\n  \"duration_seconds\": 8.1,\n  \"graph_stats\": {\n    \"total_nodes\": 90,\n    \"total_relationships\": 114\n  },\n  \"qdrant_points\": 412,\n  \"per_file\": [\n    {\n      \"file\": \"data/raw/assert/v20.0.0.md\",\n      \"status\": \"ok\",\n      \"chunks\": 31\n    },\n    {\n      \"file\": \"data/raw/fs/v20.0.0.md\",\n      \"status\": \"ok\",\n      \"chunks\": 33\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Indexing Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/indexing/status",
+              "host": ["{{base_url}}"],
+              "path": ["indexing", "status"]
+            },
+            "description": "Return the current state of the graph and Qdrant collection."
+          },
+          "response": [
+            {
+              "name": "200 - Current status",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"graph\": {\n    \"total_nodes\": 90,\n    \"total_relationships\": 114,\n    \"nodes\": {\n      \"Category\": 3,\n      \"Document\": 7,\n      \"Version\": 22,\n      \"Change\": 58\n    }\n  },\n  \"qdrant\": {\n    \"collection\": \"versionrag\",\n    \"points_count\": 412\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Query",
+      "item": [
+        {
+          "name": "Query - Content Retrieval (generic)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"How does assert.deepEqual work?\",\n  \"top_k\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/query",
+              "host": ["{{base_url}}"],
+              "path": ["query"]
+            },
+            "description": "Full RAG pipeline — content_retrieval query type. No specific version targeted."
+          },
+          "response": [
+            {
+              "name": "200 - Generated answer",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"question\": \"How does assert.deepEqual work?\",\n  \"answer\": \"assert.deepEqual() tests for deep equality between two values. As of v16, it behaves similarly to assert.deepStrictEqual() in strict mode.\",\n  \"query_type\": \"content_retrieval\",\n  \"retrieval_mode\": \"hybrid\",\n  \"sources\": [\n    {\n      \"content\": \"assert.deepEqual(actual, expected[, message]) Tests for deep equality...\",\n      \"document\": \"assert\",\n      \"version\": \"v18.0.0\",\n      \"category\": \"modules\",\n      \"chunk_index\": 4,\n      \"score\": 0.93\n    }\n  ],\n  \"sources_count\": 3,\n  \"parsed_query\": {\n    \"question\": \"How does assert.deepEqual work?\",\n    \"query_type\": \"content_retrieval\",\n    \"document\": \"assert\",\n    \"version\": null,\n    \"version_from\": null,\n    \"version_to\": null,\n    \"category\": \"modules\"\n  },\n  \"duration_seconds\": 1.24\n}"
+            }
+          ]
+        },
+        {
+          "name": "Query - Version Specific",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"What does assert.ok do in v14.0.0?\",\n  \"top_k\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/query",
+              "host": ["{{base_url}}"],
+              "path": ["query"]
+            },
+            "description": "Full RAG pipeline — content_version_specific query type. Targets a specific version."
+          }
+        },
+        {
+          "name": "Query - Version Listing",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"Which versions of the errors module are available?\",\n  \"top_k\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/query",
+              "host": ["{{base_url}}"],
+              "path": ["query"]
+            },
+            "description": "Full RAG pipeline — version_listing query type."
+          }
+        },
+        {
+          "name": "Query - Change Retrieval Explicit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"What changed in assert between v14.0.0 and v16.0.0?\",\n  \"top_k\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/query",
+              "host": ["{{base_url}}"],
+              "path": ["query"]
+            },
+            "description": "Full RAG pipeline — change_retrieval_explicit query type. Version range explicitly stated."
+          }
+        },
+        {
+          "name": "Query - Change Retrieval Implicit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"Were there any breaking changes in the http module recently?\",\n  \"top_k\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/query",
+              "host": ["{{base_url}}"],
+              "path": ["query"]
+            },
+            "description": "Full RAG pipeline — change_retrieval_implicit query type. No explicit version range given."
+          }
+        },
+        {
+          "name": "Retrieve Only (no answer generation)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"What changed in assert between v14.0.0 and v16.0.0?\",\n  \"top_k\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/query/retrieve-only",
+              "host": ["{{base_url}}"],
+              "path": ["query", "retrieve-only"]
+            },
+            "description": "Retrieval-only — parse the question and return raw retrieval results without generating an answer. Useful for debugging and evaluation."
+          },
+          "response": [
+            {
+              "name": "200 - Raw retrieval results",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"parsed_query\": {\n    \"question\": \"What changed in assert between v14.0.0 and v16.0.0?\",\n    \"query_type\": \"change_retrieval_explicit\",\n    \"document\": \"assert\",\n    \"version\": null,\n    \"version_from\": \"v14.0.0\",\n    \"version_to\": \"v16.0.0\",\n    \"category\": \"modules\"\n  },\n  \"query_type\": \"change_retrieval_explicit\",\n  \"retrieval_mode\": \"graph_only\",\n  \"chunks\": [],\n  \"changes\": [\n    {\n      \"name\": \"assert.deepEqual updated\",\n      \"description\": \"assert.deepEqual behaviour aligned with assert.deepStrictEqual\",\n      \"change_type\": \"implicit\",\n      \"version_from\": \"v14.0.0\",\n      \"version_to\": \"v15.0.0\",\n      \"source\": \"diff\"\n    },\n    {\n      \"name\": \"assert.ok strict mode enforcement\",\n      \"description\": \"assert.ok() now throws ERR_ASSERTION for falsy values in strict mode\",\n      \"change_type\": \"explicit\",\n      \"version_from\": \"v15.0.0\",\n      \"version_to\": \"v16.0.0\",\n      \"source\": \"changelog\"\n    }\n  ],\n  \"versions\": [\n    {\n      \"number\": \"v14.0.0\",\n      \"sort_key\": 14,\n      \"document\": \"assert\",\n      \"doc_type\": \"documentation\"\n    },\n    {\n      \"number\": \"v15.0.0\",\n      \"sort_key\": 15,\n      \"document\": \"assert\",\n      \"doc_type\": \"documentation\"\n    },\n    {\n      \"number\": \"v16.0.0\",\n      \"sort_key\": 16,\n      \"document\": \"assert\",\n      \"doc_type\": \"documentation\"\n    }\n  ],\n  \"chunks_count\": 0,\n  \"changes_count\": 2,\n  \"versions_count\": 3,\n  \"duration_seconds\": 0.38\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

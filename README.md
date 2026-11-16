@@ -1,105 +1,88 @@
-# VersionRAG – Prototype Implementation
+# VersionRAG
 
-This repository contains a prototype implementation of **VersionRAG (Versioned Document Retrieval-Augmented Generation)** — a retrieval-augmented question answering system designed to handle **versioned document collections**. The project was developed for academic purposes as part of a bachelor's thesis.
+Version-aware retrieval-augmented generation for evolving documents.
 
-> ⚠️ **Prototype Notice**  
-> This project is a **research prototype** developed for academic evaluation purposes only.  
-> It is not optimized for production use, and the implementation prioritizes clarity and experimentation over code quality or performance.
+A versioned corpus holds the same fact in several mutually contradicting states, and the version
+identifier is too weak a signal for embedding similarity to separate them. Asked about one
+version, a standard RAG system retrieves all of them — they are near-duplicates and score alike —
+and answers from whichever the retriever ranked first. Worse, some facts live in no single
+document: *"in which version was `strings.Lines` added?"* is a property of the boundary between
+two versions, and no context length recovers it.
 
-## Overview
+VersionRAG indexes a corpus as an explicit **version lineage** with **materialised change facts**,
+and routes each query by intent.
 
-**VersionRAG** is a retrieval-augmented generation (RAG) pipeline developed specifically for working with **versioned document collections**. It supports version-aware retrieval and reasoning by explicitly modeling:
+Reference implementation for *VersionRAG: Version-Aware Retrieval-Augmented Generation for
+Evolving Documents* (Findings of EACL 2027).
 
-- document and version metadata,
-- changes across document states (e.g., additions, deprecations),
-- and a version-sensitive graph structure.
+## Install
 
-The core idea is to build a **version graph** during indexing, capturing relationships between document versions and tracking their evolution. During retrieval, VersionRAG uses a hybrid strategy: depending on the query type, it either leverages the graph structure directly (e.g., for change reasoning), or performs vector-based content retrieval with version constraints applied via the graph.
-
-In contrast to standard RAG or GraphRAG, VersionRAG is designed to **maintain temporal alignment and version specificity**, making it suitable for scenarios that require high precision across evolving documentation.
-
-For benchmarking purposes, the repository also includes independent implementations of:
-
-- **Naive RAG** (baseline with standard dense retrieval),
-- **GraphRAG** (retrieval via knowledge graph).
-
-These implementations are included solely for performance comparison and are not part of the VersionRAG system.
-
-
-![VersionRAG Framework Overview](data/img/framework_versionrag.png)
-
-*Figure: High-level architecture of the VersionRAG system. The indexing phase builds a version-aware graph; the retrieval phase selects the appropriate retrieval strategy based on the question context.*
-
-![VersionRAG Graph Structure](data/img/framework_graph_structure.png)
-
-*Figure: Conceptual structure of the version-aware document graph. Nodes represent categories, documents, versions, content, and tracked changes.*
-
-## Features
-
-## ✅ VersionRAG Features
-
-- **Multi-document support**  
-  Handles multiple versioned documents across different categories, automatically distinguishing between standard documents and changelogs. Indexing is fully automated with no manual intervention required.
-
-- **Version-aware graph construction**  
-  Builds a structured graph representing documents, versions, and occured changes between subsequent versions.
-
-- **Change tracking**  
-  Detects and links additions, removals, and deprecations across document versions.
-
-- **Version metadata indexing**  
-  Extracts and stores version-specific metadata for targeted retrieval.
-
-- **Targeted retrieval capabilities**  
-  - Retrieve content for a specific document version  
-  - List available document versions  
-  - Identify tracked changes between two versions
-
-- **LLM integration**  
-  Supports dynamic configuration of the underlying language model used for generation.
-
-- **Baseline implementations included**  
-  Includes reference implementations of standard (naive) RAG and GraphRAG for performance comparison.
-
-## Getting Started
-
-### Installation
-
-Install dependencies listed in `src/requirements.txt`:
+Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), and Docker for the two stores.
 
 ```bash
-pip install -r src/requirements.txt
+uv sync
+cp .env.example .env     # set OPENAI_API_KEY, NEO4J_USER, NEO4J_PASSWORD
+docker compose up -d     # Neo4j + Qdrant
 ```
 
-### Running the Program
+## Use
 
-Switch into the src/ directory and run the main program:
 ```bash
-cd src
-python main.py
+uv run versionrag index  --corpus path/to/corpus
+uv run versionrag query  "What changed in Docker Compose 2.38.1?"
 ```
 
-## 🔐 Configuration
+See `src/versionrag/main.py` for the full CLI.
 
-To run the system, a `.env` file must be placed in the `src/` directory to provide necessary credentials for external services.
+## How it works
 
-### Required environment variables:
+Indexing builds a typed graph over five node types — Category, Document, Version, Content and
+Change — where `NEXT` edges carry the version order and Change nodes hold the diff between each
+consecutive pair. Content chunks live in Qdrant with `(document, version)` as filterable payload;
+the graph lives in Neo4j.
 
-#### 🔑 LLM API keys
-- `OPENAI_API_KEY` – for OpenAI-based language models
-- `GROQ_API_KEY` – for Groq-based language models
+At query time a parser resolves the question to a `(document, version)` pair and an intent, and
+the router sends it down one of three paths:
 
-> ⚙️ The selection of which LLMs are used is configured in `src/util/constants.py`.
+| Intent | Path |
+|---|---|
+| Content retrieval | vector search **filtered** on `(document, version)` |
+| Version listing | enumeration over Version nodes |
+| Change retrieval | lookup in Change nodes for the relevant version pair |
 
-#### 🛠️ Local vector database (Neo4j)
-- `NEO4J_URI`  
-- `NEO4J_USER`  
-- `NEO4J_PASSWORD`  
+Implicit changes — facts stated in no document — exist only because they are materialised at index
+time. That is what the change layer buys.
 
-#### ☁️ Cloud-based vector database (Neo4j Aura)
-- `NEO4J_URI_AURA`  
-- `NEO4J_USERNAME_AURA`  
-- `NEO4J_PASSWORD_AURA`  
-- `AURA_INSTANCEID`  
+```
+src/versionrag/
+  indexing/     pipeline, graph builder, attribute and change extraction, diff filtering
+  retrieval/    query parser, router, graph and vector retrievers, fusion
+  generation/   answer generation and prompts
+  clients/      Neo4j, Qdrant, LLM, embeddings, usage tracking
+  models/       schemas and enums
+```
 
-> ⚠️ Make sure to never commit your `.env` file to version control.
+## Datasets
+
+The two benchmarks are on the Hub, with corpora, evaluation sets and pre-chunked indexes:
+
+- [VersionQA-Software](https://huggingface.co/datasets/VersionRAG/VersionQA-Software) — 869 questions over 882 versions of open-source documentation
+- [VersionQA-Legal](https://huggingface.co/datasets/VersionRAG/VersionQA-Legal) — 547 questions over 355 point-in-time versions of amended UK legislation
+
+## Citation
+
+```bibtex
+@inproceedings{stuhlmann2027versionrag,
+  title     = {{VersionRAG}: Version-Aware Retrieval-Augmented Generation for Evolving Documents},
+  author    = {Stuhlmann, Linus and Mathitharan, Kajaluxan and Huwiler, Daniel and
+               Stockinger, Kurt and F{\"u}rst, Jonathan},
+  booktitle = {Findings of the Association for Computational Linguistics: EACL 2027},
+  year      = {2027}
+}
+```
+
+The bachelor-thesis prototype this grew out of is tagged [`v1-thesis`](../../tree/v1-thesis).
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
