@@ -24,8 +24,7 @@ uv run versionrag query "What changed in Docker Compose 2.38.1?"
 
 ## How it works
 
-Indexing builds a typed graph over five node types — Category, Document, Version, Content and
-Change. `NEXT` edges carry the version order; Change nodes hold the diff between each consecutive
+Indexing builds a typed graph over five node types: Category, Document, Version, Content and Change. `NEXT` edges carry the version order; Change nodes hold the diff between each consecutive
 pair. Chunks live in Qdrant with `(document, version)` as filterable payload, the graph in Neo4j.
 
 At query time a parser resolves the question to a `(document, version)` pair and an intent, and
@@ -48,8 +47,8 @@ src/versionrag/
 
 ## Datasets
 
-- [VersionQA-Software](https://huggingface.co/datasets/VersionRAG/VersionQA-Software) — 869 questions, 882 versions of open-source documentation
-- [VersionQA-Legal](https://huggingface.co/datasets/VersionRAG/VersionQA-Legal) — 547 questions, 355 versions of amended UK legislation
+- [VersionQA-Software](https://huggingface.co/datasets/VersionRAG/VersionQA-Software): 869 questions, 882 versions of open-source documentation
+- [VersionQA-Legal](https://huggingface.co/datasets/VersionRAG/VersionQA-Legal): 547 questions, 355 versions of amended UK legislation
 
 ## Citation
 
