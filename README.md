@@ -61,7 +61,3 @@ src/versionrag/
   year      = {2027}
 }
 ```
-
-## Licence
-
-MIT. The bachelor-thesis prototype this grew out of is tagged [`v1-thesis`](../../tree/v1-thesis).
